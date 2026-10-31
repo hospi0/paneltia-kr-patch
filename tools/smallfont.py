@@ -19,7 +19,7 @@ LIST_AT = 0x0602FADA
 BLOCK_AT = 0x0600C412
 BLOCK2_AT = 0x0600C684                  # 두 번째 같은 꼴(상태 화면 등, 2026-10-31)
 GALMURI7 = r'C:\claude\utils\font\Galmuri-v2.40.3\Galmuri7.bdf'
-FIXED = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'D', 'J', 'L', 'R', 'V', 'X', '-', '/']
+FIXED = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'E', 'L', 'P', 'V', 'X', '-', '/']   # 2026-10-31: D J R 뺌(김특DX·에테르JR → 김특대·에테르소) · E P 넣음(상태 «EXP»)
 NCELL = 222
 # 글자 아닌 그림 칸 — 원래 그림 그대로(2026-10-31 저장 화면 창 틀이 한글로 깨짐: 틀 스프라이트 = 칸 39~47 타일)
 #  36 ▶ · 37 = · 38/108~111/167~171 다른 숫자 0~9(y+1) · 39~47 창 틀 조각
@@ -74,7 +74,8 @@ class Plan:
         self.cell = {c: i for i, c in enumerate(FIXED)}
         for k, c in enumerate(order):
             self.cell[c] = free[k]
-        pool = [b for b in range(0xA1, 0xE0)] + [b for b in range(0x21, 0x7F) if chr(b) not in FIXED and b != 0x40]
+        # 0xDE·0xDF 뺌: 게임은 «다음 바이트가 ﾞ/ﾟ 면 x 안 넘김»(0x0600C51C) — 한글 코드로 쓰면 앞 글자와 겹침(2026-10-31)
+        pool = [b for b in range(0xA1, 0xDE)] + [b for b in range(0x21, 0x7F) if chr(b) not in FIXED and b != 0x40]
         self.L = [ord(c) for c in FIXED] + pool[:112 - len(FIXED)]
         assert len(set(self.L)) == 112 and 0x40 not in self.L and 0x20 not in self.L and 0x06 not in self.L
         self.syl = order
@@ -111,7 +112,10 @@ def patch_mes(d, plan, m, bad):
     out = bytearray(); k = 0
     for mt in SMALL.finditer(d):
         s = mt.group(1)
-        if not is_small(s): continue
+        if not is_small(s):
+            if s.strip(b' ') == b'EXP':                                   # 상태 화면 «EXP» — 영문도 새 코드표로(원래 바이트면 «사X0», 2026-10-31 실기)
+                out += d[k:mt.start(1)] + plan.encode(s.decode()); k = mt.end(1)
+            continue
         jp = kana(s).strip(' ')
         if jp not in m: bad.append(('번역 없음', jp)); continue
         ko = m[jp]
@@ -119,7 +123,10 @@ def patch_mes(d, plan, m, bad):
         try: nb = b' ' * lead + plan.encode(ko)
         except KeyError as x: bad.append(('글자', jp, str(x))); continue
         if len(nb) > max(len(s), 15): bad.append(('길이', jp, ko, len(s), len(nb))); continue   # 램 이름 칸 16 B(0x060A9F80~) — MES 길이는 자유, @ 전환 바이트 때문에 원래보다 길 수 있음
-        if s.endswith(b' '): nb += b' ' * (len(s) - len(nb))
+        vis = lambda x: len(x) - x.count(b'@') - x.count(0xDE) - x.count(0xDF)   # ﾞﾟ 도 자리 안 차지(앞 글자에 겹침, 0x0600C51C) · 찍히는 폭(@ = 모드 전환, 자리 안 차지) — 수치·장비 이름이 라벨 폭 바로 뒤에 찍힘(2026-10-31 실기: 바이트 길이로 맞춰 줄 어긋남)
+        if s.endswith(b' '):
+            if vis(nb) > vis(s): bad.append(('폭', jp, ko, vis(s), vis(nb))); continue
+            nb += b' ' * (vis(s) - vis(nb))
         out += d[k:mt.start(1)] + nb; k = mt.end(1)
     out += d[k:]
     d = bytes(out)
@@ -152,7 +159,9 @@ def cell_xy(c):
 
 def sheet(plan):
     f = bytearray(open(os.path.join(DISC, 'FONT.B8'), 'rb').read()); W = 320
-    src = {ch: i for i, ch in enumerate(open(os.path.join(DISC, 'A.BIN'), 'rb').read()[LIST_AT - ABIN:LIST_AT - ABIN + 112].decode('latin1'))}
+    src = {}
+    for i, ch in enumerate(open(os.path.join(DISC, 'A.BIN'), 'rb').read()[LIST_AT - ABIN:LIST_AT - ABIN + 112].decode('latin1')):
+        src.setdefault(ch, i)                                             # 첫 자리(«0»은 0번 = 밝은 0 · 38번 = 흐린 0 — 마지막 걸 잡아 0 이 흐렸음, 2026-10-31)
     def get(c):
         x, y = c % 16 * 8, c // 16 * 8
         return [f[(y + j) * W + x:(y + j) * W + x + 8] for j in range(8)]
