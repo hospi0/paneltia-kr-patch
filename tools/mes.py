@@ -23,7 +23,7 @@ def runs(d):
                 except UnicodeDecodeError: break
             else: break
         kana = len(re.findall('[ぁ-んァ-ヶー・、。「」！？％…]', s))
-        one = d[i - 1] == 1 and j < len(d) and ((d[j] == 0 and re.fullmatch('[一-龠●ー々]+', s)) or (d[j] == 0x0D and re.fullmatch('[一-龠々]{2,}：', s)))   # 한자만 이름(파넬 森·平地…, ●) — 01 뒤 00 끝 (2026-11-01 가나 비율에 걸려 빠졌음) · 01 뒤 «攻撃力：» 꼴 + 0D(수치 끼움) 끝(2026-10-31 실기 미추출)
+        one = d[i - 1] in (1, 2, 3) and j < len(d) and ((d[j] == 0 and re.fullmatch('[一-龠●ー々]+', s)) or (d[j] == 0x0D and re.fullmatch('[一-龠々]{2,}：', s)) or (d[j] in (0, 2) and re.fullmatch('[一-龠々]+[０-９]?　+[０-９]+', s)))   # 한자만 이름(파넬 森·平地…, ●) — 01 뒤 00 끝 (2026-11-01 가나 비율에 걸려 빠졌음) · 01 뒤 «攻撃力：» 꼴 + 0D(수치 끼움) 끝(2026-10-31 실기 미추출)
         if (len(s) >= 2 or one) and j < len(d) and d[j] < 0x40 and d[i - 1] in (0, 1, 2, 3, 0x11, 0x17) and (one or kana >= len(s) * 0.3) and re.search('[ぁ-んァ-ヶ一-龠]', s):   # 2026-10-31 02 = 메뉴 둘째 항목부터 · 17 = 이벤트(음성) 대사 · 11 — 실기 미추출
             out.append((i, s, j)); i = j                                     # 00/01/03 뒤 시작 · 제어 바이트(<0x40: 0C 대사 끝·13·02·00) 앞 끝 — 피연산자 잡음은 가나 비율로 거름
         else: i += 1
